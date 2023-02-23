@@ -1,0 +1,13 @@
+-Q . LF
+lang.v
+type.v
+proofs.v
+lang_spec.v
+type_spec.v
+proofs_spec.v
+lang_declassify.v
+type_declassify.v
+proofs_declassify.v
+lang_spec_declassify.v
+type_spec_declassify.v
+proofs_spec_declassify.v
