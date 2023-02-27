@@ -183,9 +183,11 @@ Qed.
 
 Lemma sub_publicload_public : forall T,
 sub_vlevel T PublicLoad = true ->
-T = Public. 
+T = Public \/ T = PublicLoad. 
 Proof.
-by move=> [] //= ht. 
+move=> [] //= ht.
++ by left.
+by right. 
 Qed.
 
 Lemma sub_sub_vlevel : forall T T',
@@ -205,10 +207,8 @@ sub_vlevel T PublicLoad /\ sub_vlevel T' PublicLoad.
 Proof.
 move=> T T' h.
 split=> //=.
-+ case: T h=> //=. by case: T'=> //=. 
-case: T' h=> //=.
-+ by case: T=> //=.
-by case: T.
++ by case: T h=> //=. 
+case: T' h=> //=. by case: T=> //=. 
 Qed.
 
 Lemma expr_equiv_val : forall VGamma AGamma s1 s2 e T,
@@ -224,7 +224,9 @@ induction hty.
   + move=> hms hteq. case: T H hteq=> //=.
     move=> hx' _. by move: (hx x hx').
   move=> hms hteq. case: T H hteq=> //=.
-  move=> hx' _. by move: (hx x hx').
+  + move=> hx' _. by move: (hx x hx').
+  move=> hxty. have ht : ~ false. + by auto.
+  move: (hms ht)=> [] hr hm _. by move: (hr x hxty).
 rewrite /public_ms /= in hteq. case: b2 hms IHhty1 IHhty2 hteq.
 + move=> ht /= h1 h2 /= h. apply sub_sub_vlevel in h.
   case: h=> h1' h2'.
@@ -670,10 +672,16 @@ induction hty; subst.
   + by auto.
   + case: d H1 IHhty hequiv' hb1 hb2 => //=.
     + case: T H=> //=.
+      (* x is secret *) 
+      + move=> hx _ IHhty hequiv' hb1 hb2 x' hx' /=.
+        rewrite /update_rmap /update_map. case: ifP=> /=.
+        + by move=> hxeq.
+        move=> hxneq. by move: (hr x' hx').
+      (* x is publicload *)
       move=> hx _ IHhty hequiv' hb1 hb2 x' hx' /=.
-      rewrite /update_rmap /update_map. case: ifP=> /=.
-      + by move=> hxeq.
-      move=> hxneq. by move: (hr x' hx').
+      rewrite /update_rmap /update_map /=. case: ifP=> //=.
+      move=> hneq. by move: (hr x' hx').
+    (* d is false *)
     move=> H1 IHhty hequiv' hb1 hb2 x' hx' /=. 
     rewrite /update_rmap /update_map. case: ifP=> //=.
     + move=> hxeq. apply eqb_eq in hxeq; subst.
@@ -682,21 +690,34 @@ induction hty; subst.
       by have /= := expr_equiv_val_public {| scmd := Iassgn x' false e :: c; rmap := r1; mmap := m1; ms := ms2 |} 
               {| scmd := Iassgn x' false e :: c; rmap := r2; mmap := m2; ms := ms2 |} hr H0 hpub.
     move=> hxneq. by move: (hr x' hx').
+  (* no speculation *)
   move=> /= hms'. case: d H1 IHhty hequiv' hb1 hb2 => //=.
   + case: T H=> //=.
+    (* x is secret *)
     + move=> hx _ IHhty hequiv' hb1 hb2 /=. split=> //=.
       + rewrite /update_rmap /update_map /=. move=> x' hx'.
         case: ifP=> //=. move=> hneq. move: (hm hms')=> [] hr' hm'.
         by move: (hr' x' hx').
       move=> a ha. move: (hm hms')=> [] hr' hm'. by move: (hm' a ha).
+    (* x is publicload *)
+    + move=> hx _ IHhty hequiv' hb1 hb2 /=. split=> //=.
+      + move=> x' hx'. rewrite /update_rmap /update_map. case: ifP=> //=.
+        + move=> hneq. move: (hm hms')=> [] hr' hm'.
+        by move: (hr' x' hx').
+      move=> a ha. move: (hm hms')=> [] hr' hm'. by move: (hm' a ha). 
   move=> H1 IHhty hequiv'. split=> //=.
   + move=> x' hx'. rewrite /update_rmap /update_map. case: ifP=> //=.
     + move=> hxeq. apply eqb_eq in hxeq; subst. rewrite H in hx'.
       case: hx'=> [] ht; subst. apply sub_publicload_public in H1; subst.
-      have hpub : Public = Public. + by auto.
-      by have /= := expr_equiv_val_public {| scmd := Iassgn x' false e :: c; rmap := r1; mmap := m1; ms := ms2 |} 
+      case: H1.
+      + move=> H1; subst. have hpub : Public = Public. + by auto.
+        by have /= := expr_equiv_val_public {| scmd := Iassgn x' false e :: c; rmap := r1; mmap := m1; ms := ms2 |} 
               {| scmd := Iassgn x' false e :: c; rmap := r2; mmap := m2; ms := ms2 |} hr H0 hpub.
-    move=> hxneq. move: (hm hms')=> [] hr' hm'. by move: (hr' x' hx').
+      have hsub : sub_vlevel PublicLoad
+     (public_ms (ms {| scmd := Iassgn x' false e :: c; rmap := r1; mmap := m1; ms := ms2 |})) .
+      + rewrite /public_ms. by case: ifP=> //=.
+      move=> H1; subst. by have := expr_equiv_val hequiv' H0 hsub.
+     move=> hxneq. move: (hm hms')=> [] hr' hm'. by move: (hr' x' hx').
   move=> a ha. move: (hm hms')=> [] hr' hm'. by move: (hm' a ha).
 (* x := a[e] *)
 + move=> r1 m1 ms1 r2 m2 ms2 dir ov s1' s2' hms hr hm hequiv' hb1 hb2 /=. 
@@ -709,13 +730,17 @@ induction hty; subst.
   + by auto.
   + move=> x'' hr' /=. inversion hta; (try discriminate); subst.
     case: d H1 IHhty hequiv' hb1 hb2 H11 => //=.
-    + case: T H=> //=. move=> hx _ IHhty hequiv' /=. 
-      rewrite /update_rmap /update_map /=. 
-      case: ifP=> //=. move=> hneq. by move: (hr x'' hr').
+    + case: T H=> //=. 
+      + move=> hx _ IHhty hequiv' /=. 
+        rewrite /update_rmap /update_map /=. 
+        case: ifP=> //=. move=> hneq. by move: (hr x'' hr').
+      move=> hx _ IHhty hequiv' hb1 hb2 hei. 
+      rewrite /update_rmap /update_map /=. case: ifP=> //=.
+      move=> hneq. by move: (hr x'' hr').
     move=> H1 IHhty hequiv'. 
     rewrite /update_rmap /update_map. case: ifP=> //=.
     + move=> hxeq. apply eqb_eq in hxeq; subst. rewrite H in hr'. case: hr'=> h1; subst.
-      apply sub_publicload_public in H1; subst. by case: T' hta H3 H1=> //=.
+      apply  sub_public_always_public in H1. by case: T' hta H3 H1=> //=.
     move=> hneq. by move: (hr x'' hr').
   move=> /= hms1. case: d H1 IHhty hequiv' hb1 hb2 H11 => //. 
   + move=> H1 IHhty hequiv' /=. split=> //=.
@@ -727,7 +752,9 @@ induction hty; subst.
     + move=> heq. move: (hm hms1)=> [] hr' hm'. apply eqb_eq in heq; subst.
       rewrite H in hx''. case: hx''=> h1; subst. inversion hta; (try discriminate); subst.
       rewrite H11 /=.
-      apply sub_publicload_public in H1. by case: T' hta H1 H3=> //=.
+      apply sub_publicload_public in H1; subst. case: T' hta H3 H1=> //=.
+      + by move=> haty hx'ty [] //=.
+      move=> haty hx' [] //= _. move: (hm hms1)=> [] hr1 hm1. by move: (hm1 x' hx')=> ->.
     move=> hneq. move: (hm hms1)=> [] hr' hm'. by move: (hr' x'' hx'').
   move=> a ha. move: (hm hms1)=> [] hr' hm'. by move: (hm' a ha).
 (* a[e] := e *)
@@ -743,8 +770,10 @@ induction hty; subst.
     case: d H1 IHhty hequiv' hb1 hb2 H11=> //=.
     + case: T H=> //=. 
       + move=> hx _ IHhty hequiv' /=. by move: (hr x'' hr').
-      move=> H. case: T' hta H3=> //= hta H3 _ IHhty hequiv'. by move: (hr x'' hr').
+        move=> H. case: T' hta H3=> //= hta H3 _ IHhty hequiv'. by move: (hr x'' hr').
+      by move: (hr x'' hr').
     move=> H. case: T' hta H3=> //= hta H3 _ IHhty hequiv'. by move: (hr x'' hr').
+    by move: (hr x'' hr').
     move=> H1 IHhty hequiv'. by move: (hr x'' hr').
   move=> /= hms1. split=> //=.
   + move=> x'' hx''. move: (hm hms1)=> [] hr' hm'. by move: (hr' x'' hx'').
@@ -755,6 +784,10 @@ induction hty; subst.
     + move=> heq. apply eqb_eq in heq; subst.
       rewrite ha in H2. by case: H2.
     move=> hneq. move: (hm hms1)=> [] hr' hm'. by move: (hm' a ha).
+  move=> hb1 hb2 heeq. rewrite /update_mem /update_map. case: ifP=> //=.
+  + move=> heq. apply eqb_eq in heq; subst.
+    move: (hm hms1)=> [] hr1 hm1. by move: (hm1 a ha)=> ->.
+  move=> hneq. move: (hm hms1)=> [] hr1 hm1. by move: (hm1 a ha)=> ->.
   move=> H1 Ihhty hequiv' /=. move: (hm hms1)=> [] hr' hm'.
   rewrite /update_mem /update_map /=. case: ifP=> //=.
   + move=> heq. apply eqb_eq in heq; subst.
@@ -766,7 +799,12 @@ induction hty; subst.
     case: T H1 H=> //= _ H1. 
     by have -> := expr_equiv_val_public {| scmd := Istore (AA a ei) false e :: c; rmap := r1; mmap := m1; ms := ms2 |}
           {| scmd := Istore (AA a ei) false e :: c; rmap := r2; mmap := m2; ms := ms2 |} hr H1 hpub.
-  move=> hneq. by move: (hm' a ha).
+  move=> hb1 hb2 heeq. move: (hm hms1)=> [] hr1 hm1. move: (hm1 a ha)=> <-. 
+  have hsub : (sub_vlevel PublicLoad
+     (public_ms
+        (ms {| scmd := Istore (AA a ei) false e :: c; rmap := r1; mmap := m1; ms := ms2 |}))). + rewrite /public_ms /=. by case: ifP=> //=.
+  by have -> := expr_equiv_val hequiv' H1 hsub.
+ by move: (hm' a ha).
 (* If b i i' *)
 + move=> r1 m1 ms1 r2 m2 ms2 dir ov s1' s2' hms hr hm hequiv' hb1 hb2 /=. 
   case: b H0 H IHhty hequiv' hb1 hb2 => //=.
@@ -811,14 +849,19 @@ induction hty; subst.
     move=> hms hm hequiv'; subst. rewrite /update_rmap /update_map /=.
     case: ifP=> //=.
     + move=> heq. apply eqb_eq in heq; subst. apply sub_publicload_public in H1; subst.
-      by move: (hr y H0).
+      case: H1=> //=.
+      + move=> H1; subst. by move: (hr y H0).
+      move=> H1; subst. have ht : ~false. + by auto.
+      move: (hms ht)=> [] hr1 hm1. by move: (hr1 y H0).
     move=> hneq. by move: (hr x' hx').
   move=> /= hms1. split=> //=.
   + move=> x' hx'. case: ifP=> //=.
     + move=> hms1'; subst. move: (hm hms1)=> [] hr' hm'.
       rewrite /update_rmap /update_map. case: ifP=> //=.
       + move=> heq. apply eqb_eq in heq; subst. apply sub_publicload_public in H1; subst.
-        by move: (hr y H0).
+        case: H1=> //=.
+        + move=> H1; subst. by move: (hr y H0).
+        move=> H1; subst. by move: (hr' y H0).
       move=> hneq. by move: (hr' x' hx').
     move=> a ha. move: (hm hms1)=> [] hr' hm'. by move: (hm' a ha).
 move=> r1 m1 ms1 r2 m2 ms2 dir ov /= s1' s2' hms hr hm hequiv hb1 hb2 /=; subst. 

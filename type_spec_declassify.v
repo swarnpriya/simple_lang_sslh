@@ -34,7 +34,8 @@ match l1, l2 with
 | Secret, _ => false
 | Public, l => true
 | PublicLoad, Secret => true
-| PublicLoad, _ => false
+| PublicLoad, Public => false
+| PublicLoad, PublicLoad => true
 end.
 
 Definition alevel_to_vlevel (l1 : alevel) : vlevel :=
