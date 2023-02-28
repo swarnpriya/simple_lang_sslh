@@ -31,6 +31,7 @@ end.
 
 Definition sub_vlevel (l1 : vlevel) (l2 : vlevel) : bool :=
 match l1, l2 with 
+| Secret, Secret => true
 | Secret, _ => false
 | Public, l => true
 | PublicLoad, Secret => true
